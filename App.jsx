@@ -17,7 +17,6 @@ function App() {
             <Route path="/library" element={<FormulaLibrary />} />
           </Route>
 
-          <Route path="*" element={<PageNotFound />} />
         </Routes>
       </Router>
 
