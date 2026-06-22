@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from "@/components/ui/button";
+// Removed the missing shadcn button import
 import { Play, Trash2, Bookmark } from 'lucide-react';
 
 export default function SavedFormulasList({ formulas, onSelect, onDelete, isLoading }) {
@@ -41,22 +41,24 @@ export default function SavedFormulasList({ formulas, onSelect, onDelete, isLoad
               <p className="text-xs font-medium text-foreground truncate">{f.name}</p>
               <p className="text-[10px] font-mono text-primary/60 truncate">{f.formula}</p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary"
+            
+            {/* Swapped shadcn Button for native button */}
+            <button
+              className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-opacity duration-200"
               onClick={() => onSelect(f)}
+              type="button"
             >
               <Play className="w-3 h-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+            </button>
+
+            {/* Swapped shadcn Button for native button */}
+            <button
+              className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity duration-200"
               onClick={() => onDelete(f.id)}
+              type="button"
             >
               <Trash2 className="w-3 h-3" />
-            </Button>
+            </button>
           </div>
         ))}
       </div>
