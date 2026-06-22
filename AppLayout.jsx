@@ -7,23 +7,29 @@ import SavedFormulasList from './SavedFormulasList';
 
 export default function App() {
   return (
-    <BrowserRouter>
+    // 1. Added basename back for GitHub Pages routing alignment
+    <BrowserRouter basename="/MesoMapperWX">
       <Routes>
-
         {/* Main app */}
         <Route element={<AppLayout />}>
 
           {/* Dashboard */}
           <Route index element={<USHeatMap />} />
 
-          {/* Library */}
+          {/* Library - 2. Passed safe placeholder fallbacks so it won't crash on mounting */}
           <Route
             path="library"
-            element={<SavedFormulasList />}
+            element={
+              <SavedFormulasList 
+                formulas={[]} 
+                onSelect={() => {}} 
+                onDelete={() => {}} 
+                isLoading={false} 
+              />
+            }
           />
 
         </Route>
-
       </Routes>
     </BrowserRouter>
   );
