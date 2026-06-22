@@ -137,6 +137,7 @@ function buildSingleUrl({ lat, lon, variables, section, model, pastDays, forecas
   return `https://api.open-meteo.com/v1/forecast?${buildQueryString(pairs)}`;
 }
 
+// Map frame boundaries matching your background grid layout bounds exactly
 const GRID_LON_MIN = -125, GRID_LON_MAX = -65, GRID_LAT_MIN = 24, GRID_LAT_MAX = 50;
 
 function buildGridPoints(cols, rows) {
@@ -272,22 +273,19 @@ export default function USHeatMap() {
     return { min: vals[0], max: vals[vals.length - 1], avg: sum / vals.length, count: vals.length };
   }, [gridData, timeIdx]);
 
-  // Pre-calculate colored cell rect parameters entirely mapping to the SVG grid projection coordinates
+  // --- FIXED INDIVIDUAL CELL PROJECTION LAYOUT ENGINE ---
   const renderedCells = useMemo(() => {
-    if (!gridData) return [];
+    if (!gridData || !stepStats) return [];
     const step = gridData.timeSteps[Math.min(timeIdx, gridData.timeSteps.length - 1)];
-    if (!step || !stepStats) return [];
+    if (!step) return [];
 
     const { points, cols, rows } = gridData;
     const range = stepStats.max - stepStats.min || 1;
     const colorFn = COLOR_SCHEMES[colorScheme] || COLOR_SCHEMES.thermal;
 
-    const [gridX0, gridY0] = lonLatToXY(GRID_LON_MIN, GRID_LAT_MAX);
-    const [gridX1, gridY1] = lonLatToXY(GRID_LON_MAX, GRID_LAT_MIN);
-    const gridPxW = gridX1 - gridX0;
-    const gridPxH = gridY1 - gridY0;
-    const cellPxW = gridPxW / cols;
-    const cellPxH = gridPxH / rows;
+    // Geographic width/height spans for pixel delta offsets
+    const dLon = (GRID_LON_MAX - GRID_LON_MIN) / cols;
+    const dLat = (GRID_LAT_MAX - GRID_LAT_MIN) / rows;
 
     return points.map((pt, i) => {
       const val = step[i]?.value;
@@ -295,15 +293,20 @@ export default function USHeatMap() {
 
       const t = Math.max(0, Math.min(1, (val - stepStats.min) / range));
       const fillString = colorFn(t);
-      const px = gridX0 + pt.col * cellPxW;
-      const py = gridY0 + pt.row * cellPxH;
+
+      // Map cell corners dynamically via your custom map projection module
+      const [xLeft, yTop] = lonLatToXY(pt.lon - dLon / 2, pt.lat + dLat / 2);
+      const [xRight, yBottom] = lonLatToXY(pt.lon + dLon / 2, pt.lat - dLat / 2);
+
+      const width = Math.abs(xRight - xLeft);
+      const height = Math.abs(yBottom - yTop);
 
       return {
         id: i,
-        x: px - 0.2,
-        y: py - 0.2,
-        w: cellPxW + 0.4,
-        h: cellPxH + 0.4,
+        x: xLeft - 0.3,
+        y: yTop - 0.3,
+        w: width + 0.6,
+        h: height + 0.6,
         fill: fillString,
         cell: pt,
         value: val
@@ -323,9 +326,8 @@ export default function USHeatMap() {
 
       {gridData && (
         <>
-          {/* Top Panel Controls Header Layout */}
+          {/* Controls Bar Header Panel */}
           <div className="flex flex-col gap-3 p-3 rounded-xl border border-zinc-800 bg-zinc-900/50 sm:flex-row sm:items-center sm:justify-between">
-            {/* Color Scheme Picker Bar (Ensures horizontal scrolling on mobile, zero overlapping text strings) */}
             <div className="flex overflow-x-auto gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 max-w-full scrollbar-none shrink-0">
               {Object.keys(COLOR_SCHEMES).map(cs => (
                 <button
@@ -342,7 +344,6 @@ export default function USHeatMap() {
               ))}
             </div>
 
-            {/* Weather Analytics Dashboard Metrics */}
             <div className="flex items-center justify-between gap-3 sm:justify-end shrink-0 w-full sm:w-auto">
               {stepStats && (
                 <div className="flex items-center gap-3 text-xs font-mono bg-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-800/60">
@@ -360,16 +361,15 @@ export default function USHeatMap() {
             </div>
           </div>
 
-          {/* Unified Map Window Box */}
+          {/* Map Frame Window Viewbox */}
           <div className="w-full relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl aspect-[960/600]">
             <svg
               viewBox={US_VIEWBOX}
               className="absolute inset-0 w-full h-full block cursor-crosshair z-10"
             >
-              {/* Layer 1: Solid Dark Base Ocean Background */}
               <rect width="100%" height="100%" fill="hsl(215,22%,14%)" />
 
-              {/* Layer 2: Vector Matrix Map Array (Directly integrated inside the SVG coordinate stack) */}
+              {/* Geo-aligned Heatmap Mesh */}
               <g id="heatmap-grid-mesh">
                 {renderedCells.map(cell => (
                   <rect
@@ -379,21 +379,20 @@ export default function USHeatMap() {
                     width={cell.w}
                     height={cell.h}
                     fill={cell.fill}
-                    className="transition-colors duration-150 ease-out"
                     onMouseEnter={() => setHoveredCell({ ...cell.cell, value: cell.value })}
                     onMouseLeave={() => setHoveredCell(null)}
                   />
                 ))}
               </g>
 
-              {/* Layer 3: Longitude and Latitude Grid Lines */}
+              {/* Map Reference Graticule Lines */}
               <g id="map-graticule-lines" style={{ pointerEvents: 'none' }}>
                 {[-120, -110, -100, -90, -80, -70].map(lon => {
                   const [x] = lonLatToXY(lon, 37);
                   return (
                     <g key={lon}>
-                      <line x1={x} y1={18} x2={x} y2={582} stroke="rgba(255,255,255,0.04)" strokeWidth={0.5} />
-                      <text x={x} y={593} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.35)" fontFamily="monospace">{lon}°</text>
+                      <line x1={x} y1={18} x2={x} y2={582} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
+                      <text x={x} y={593} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)" fontFamily="monospace">{lon}°</text>
                     </g>
                   );
                 })}
@@ -401,14 +400,14 @@ export default function USHeatMap() {
                   const [, y] = lonLatToXY(-127, lat);
                   return (
                     <g key={lat}>
-                      <line x1={18} y1={y} x2={942} y2={y} stroke="rgba(255,255,255,0.04)" strokeWidth={0.5} />
-                      <text x={12} y={y + 3} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.35)" fontFamily="monospace">{lat}°</text>
+                      <line x1={18} y1={y} x2={942} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
+                      <text x={12} y={y + 3} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)" fontFamily="monospace">{lat}°</text>
                     </g>
                   );
                 })}
               </g>
 
-              {/* Layer 4: State Abbreviations Text */}
+              {/* State Abbreviations Labels Layer */}
               <g id="state-labels-overlay" style={{ pointerEvents: 'none' }}>
                 {STATE_LABELS.map(([lon, lat, abbr]) => {
                   const [x, y] = lonLatToXY(lon, lat);
@@ -422,7 +421,7 @@ export default function USHeatMap() {
                 })}
               </g>
 
-              {/* Layer 5: Target Major Metro Locations Map Pins */}
+              {/* Cities Vector Overlay Map Pins */}
               <g id="city-markers-overlay" style={{ pointerEvents: 'none' }}>
                 {CITY_MARKERS.map(([lon, lat, name]) => {
                   const [x, y] = lonLatToXY(lon, lat);
@@ -440,13 +439,12 @@ export default function USHeatMap() {
                 })}
               </g>
 
-              {/* Layer 6: Dynamic Sub-Header Info String */}
               <text x={480} y={22} textAnchor="middle" fontSize={9} fill="rgba(160,200,240,0.7)" fontFamily="monospace" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.85)', pointerEvents: 'none' }}>
                 {gridData.formula}  ·  {gridData.cols}×{gridData.rows} grid  ·  {gridData.config?.model}
               </text>
             </svg>
 
-            {/* Layer 7: Absolute Scale Gradient Legend Box overlay */}
+            {/* Gradient Scale Overlay Legend Panel */}
             <div className="absolute top-3 right-3 flex gap-2 items-start z-20 bg-zinc-950/85 backdrop-blur-sm p-1.5 rounded-lg border border-zinc-800/50 pointer-events-none">
               <div className="flex flex-col items-end gap-0.5 justify-between h-16 text-[9px] font-mono">
                 {stepStats && <>
@@ -458,7 +456,7 @@ export default function USHeatMap() {
               <div className="w-2 rounded-sm h-16" style={{ background: LEGEND_GRADIENTS[colorScheme] }} />
             </div>
 
-            {/* Layer 8: Responsive Hover Tooltip Modal */}
+            {/* Interactive Projected Overlay Popovers */}
             {hoveredCell && (
               <div
                 className="pointer-events-none absolute z-30 rounded-lg px-2 py-1 text-xs shadow-xl border border-zinc-700 bg-zinc-900/95 text-white whitespace-nowrap hidden sm:block"
@@ -474,7 +472,7 @@ export default function USHeatMap() {
             )}
           </div>
 
-          {/* Dynamic Animation Navigation Control Deck Container */}
+          {/* Timeline Animation Nav Controller */}
           {gridData.times && gridData.times.length > 1 && (
             <div className="space-y-2 bg-zinc-900/30 p-3 sm:p-4 rounded-xl border border-zinc-800/60">
               <div className="flex items-center justify-between">
