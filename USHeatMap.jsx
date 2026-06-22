@@ -151,6 +151,7 @@ function buildGridPoints(cols, rows) {
 export default function USHeatMap() {
   const canvasRef = useRef(null);
   const svgRef = useRef(null);
+  const containerRef = useRef(null);
   const [isFetching, setIsFetching] = useState(false);
   const [fetchProgress, setFetchProgress] = useState(null);
   const [gridData, setGridData] = useState(null);
@@ -160,10 +161,13 @@ export default function USHeatMap() {
   const [error, setError] = useState('');
   const [useBulk, setUseBulk] = useState(true);
 
+  // Unified Rendering Engine
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !gridData) return;
     const ctx = canvas.getContext('2d');
+    
+    // Hard-set canvas coordinate resolution to match standard USMapSVG bounding boxes exactly
     const W = 960, H = 600;
     canvas.width = W;
     canvas.height = H;
@@ -182,6 +186,7 @@ export default function USHeatMap() {
     const range = maxV - minV || 1;
     const colorFn = COLOR_SCHEMES[colorScheme] || COLOR_SCHEMES.thermal;
 
+    // Canvas Background paint bounds matching layout
     ctx.fillStyle = 'hsl(215,22%,16%)';
     ctx.fillRect(0, 0, W, H);
 
@@ -200,13 +205,15 @@ export default function USHeatMap() {
       const t = Math.max(0, Math.min(1, (val - minV) / range));
       const [r, g, b, a] = colorFn(t);
 
-      const px = Math.round(gridX0 + col * cellPxW);
-      const py = Math.round(gridY0 + row * cellPxH);
-      const pw = Math.round(gridX0 + (col + 1) * cellPxW) - px;
-      const ph = Math.round(gridY0 + (row + 1) * cellPxH) - py;
+      const px = gridX0 + col * cellPxW;
+      const py = gridY0 + row * cellPxH;
+      const pw = (gridX0 + (col + 1) * cellPxW) - px;
+      const ph = (gridY0 + (row + 1) * cellPxH) - py;
 
       ctx.fillStyle = `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
-      ctx.fillRect(px, py, Math.max(1, pw), Math.max(1, ph));
+      
+      // Use floating-point boundaries to prevent separation lines at high resolutions
+      ctx.fillRect(px - 0.3, py - 0.3, pw + 0.6, ph + 0.6);
     }
   }, [gridData, timeIdx, colorScheme]);
 
@@ -347,7 +354,7 @@ export default function USHeatMap() {
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-4 px-2 sm:px-4 pb-6">
+    <div className="w-full max-w-7xl mx-auto space-y-4 p-2 md:p-4 pb-12 select-none">
       <MapModeForm onFetch={(cfg) => handleFetch({ ...cfg, useBulk })} isFetching={isFetching} fetchProgress={fetchProgress} useBulk={useBulk} onToggleBulk={setUseBulk} />
 
       {error && (
@@ -358,15 +365,15 @@ export default function USHeatMap() {
 
       {gridData && (
         <>
-          {/* Responsive Control Bar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-zinc-900/40 p-2.5 rounded-xl border border-zinc-800/60">
-            {/* Horizontal Scrollable Buttons Container for Color Schemes on Mobile */}
-            <div className="flex overflow-x-auto no-scrollbar rounded-lg border border-zinc-800 bg-zinc-950/50 p-0.5 max-w-full shrink-0">
+          {/* Responsive Header Configuration Row */}
+          <div className="flex flex-col gap-3 p-3 rounded-xl border border-zinc-800 bg-zinc-900/50 sm:flex-row sm:items-center sm:justify-between">
+            {/* Color Schemes Grid - Grid prevents button text overlap entirely */}
+            <div className="grid grid-cols-4 gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 lg:flex lg:flex-row lg:w-auto">
               {Object.keys(COLOR_SCHEMES).map(cs => (
                 <button
                   key={cs}
                   onClick={() => setColorScheme(cs)}
-                  className="h-7 px-3 text-xs font-medium transition-all capitalize whitespace-nowrap rounded-md"
+                  className="h-7 text-[11px] font-medium transition-all capitalize rounded-md px-2 lg:px-3 text-center truncate"
                   style={{
                     background: colorScheme === cs ? 'hsl(220,14%,24%)' : 'transparent',
                     color: colorScheme === cs ? 'hsl(210,25%,90%)' : 'hsl(210,10%,55%)',
@@ -377,44 +384,43 @@ export default function USHeatMap() {
               ))}
             </div>
 
-            {/* Stats Panel & Time Marker */}
-            <div className="flex items-center justify-between md:justify-end gap-4 w-full">
+            {/* Metrics Dashboard Indicators */}
+            <div className="flex items-center justify-between gap-3 sm:justify-end shrink-0">
               {stepStats && (
-                <div className="flex items-center gap-3 text-[11px] font-mono bg-zinc-950/40 px-3 h-8 rounded-lg border border-zinc-800/40">
-                  <span className="text-muted-foreground">min <span className="text-blue-400 font-bold">{formatNumber(stepStats.min)}</span></span>
-                  <span className="text-muted-foreground">avg <span className="text-amber-400 font-bold">{formatNumber(stepStats.avg)}</span></span>
-                  <span className="text-muted-foreground">max <span className="text-red-400 font-bold">{formatNumber(stepStats.max)}</span></span>
+                <div className="flex items-center gap-2.5 text-[10px] sm:text-[11px] font-mono bg-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-800/60">
+                  <span className="text-zinc-500">min:<span className="text-blue-400 font-bold ml-0.5">{formatNumber(stepStats.min)}</span></span>
+                  <span className="text-zinc-500">avg:<span className="text-amber-400 font-bold ml-0.5">{formatNumber(stepStats.avg)}</span></span>
+                  <span className="text-zinc-500">max:<span className="text-red-400 font-bold ml-0.5">{formatNumber(stepStats.max)}</span></span>
                 </div>
               )}
 
               {timeLabel && (
-                <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-3 h-8 flex items-center rounded-lg border border-blue-500/20 shrink-0">
+                <span className="text-[10px] sm:text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1.5 rounded-lg border border-blue-500/20 whitespace-nowrap">
                   {timeLabel}
                 </span>
               )}
             </div>
           </div>
 
-          {/* Unified Map Window Frame */}
+          {/* Map Frame Sandbox container with locked structural relative bounds */}
           <div
-            className="rounded-xl overflow-hidden relative border border-zinc-800/80 bg-zinc-950 shadow-2xl touch-none"
-            style={{ boxShadow: '0 20px 40px -15px rgba(0,0,0,0.5)' }}
+            ref={containerRef}
+            className="w-full relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl"
           >
-            {/* Locked Aspect Ratio Vector-to-Canvas Sandbox */}
-            <div className="relative w-full aspect-[960/600]">
-              {/* Layer 1: Color Canvas Array */}
+            {/* Aspect box container enforces exactly 960:600 sizing for BOTH children */}
+            <div className="w-full relative aspect-[960/600]">
+              {/* Canvas layers directly to match viewport box frame size */}
               <canvas
                 ref={canvasRef}
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-                style={{ imageRendering: gridData && gridData.cols >= 20 ? 'auto' : 'pixelated' }}
+                className="absolute top-0 left-0 w-full h-full block pointer-events-none z-0"
+                style={{ imageRendering: gridData.cols >= 20 ? 'auto' : 'pixelated' }}
               />
 
-              {/* Layer 2: Vector Maps & Controls (Stacked directly on top) */}
+              {/* SVG sits precisely matched directly over Canvas coordinates */}
               <svg
                 ref={svgRef}
                 viewBox={US_VIEWBOX}
-                className="absolute inset-0 w-full h-full cursor-crosshair select-none"
-                style={{ display: 'block', zIndex: 10 }}
+                className="absolute top-0 left-0 w-full h-full block cursor-crosshair z-10"
                 onMouseMove={handleCanvasHover}
                 onMouseLeave={() => setHoveredCell(null)}
               >
@@ -468,41 +474,39 @@ export default function USHeatMap() {
                 </text>
               </svg>
 
-              {/* Layer 3: Overlay Scale Bar Legend */}
-              <div className="absolute top-4 right-4 flex gap-2 items-start z-20 bg-zinc-950/80 backdrop-blur-sm p-1.5 rounded-lg border border-zinc-800/50">
-                <div className="flex flex-col items-end gap-0.5 justify-between h-20">
+              {/* Absolute Scales Scale Legend - Locked over content safely */}
+              <div className="absolute top-3 right-3 flex gap-2 items-start z-20 bg-zinc-950/80 backdrop-blur-sm p-1.5 rounded-lg border border-zinc-800/50">
+                <div className="flex flex-col items-end gap-0.5 justify-between h-16 text-[9px] font-mono">
                   {stepStats && <>
-                    <span className="text-[9px] font-mono font-bold text-white/80">{formatNumber(stepStats.max, 1)}</span>
-                    <span className="text-[9px] font-mono text-white/40">{formatNumber(stepStats.avg, 1)}</span>
-                    <span className="text-[9px] font-mono font-bold text-white/80">{formatNumber(stepStats.min, 1)}</span>
+                    <span className="font-bold text-white/80">{formatNumber(stepStats.max, 0)}</span>
+                    <span className="text-white/40">{formatNumber(stepStats.avg, 0)}</span>
+                    <span className="font-bold text-white/80">{formatNumber(stepStats.min, 0)}</span>
                   </>}
                 </div>
-                <div className="w-2.5 rounded-sm h-20" style={{ background: LEGEND_GRADIENTS[colorScheme] }} />
+                <div className="w-2 rounded-sm h-16" style={{ background: LEGEND_GRADIENTS[colorScheme] }} />
               </div>
 
-              {/* Layer 4: Floating Map Tooltip */}
+              {/* Contextual Interactive Popovers */}
               {hoveredCell && (
                 <div
-                  className="pointer-events-none absolute z-30 rounded-lg px-2.5 py-1.5 text-xs shadow-2xl backdrop-blur"
+                  className="pointer-events-none absolute z-30 rounded-lg px-2 py-1 text-xs shadow-xl border border-zinc-700 bg-zinc-900/95 text-white whitespace-nowrap"
                   style={{
-                    left: Math.min(hoveredCell.x - (svgRef.current?.getBoundingClientRect().left ?? 0) + 12, (svgRef.current?.clientWidth ?? 300) - 140),
-                    top: hoveredCell.y - (svgRef.current?.getBoundingClientRect().top ?? 0) - 52,
-                    background: 'rgba(24, 24, 27, 0.9)',
-                    border: '1px solid rgba(63, 63, 70, 0.7)',
+                    left: `${Math.min(((hoveredCell.col + 0.5) / gridData.cols) * 100, 85).toFixed(1)}%`,
+                    top: `${Math.max(((hoveredCell.row - 1.2) / gridData.rows) * 100, 5).toFixed(1)}%`,
                   }}
                 >
-                  <div className="font-mono text-[9px] text-zinc-400">{hoveredCell.lat.toFixed(2)}°N {Math.abs(hoveredCell.lon).toFixed(2)}°W</div>
-                  <div className="font-mono font-bold text-blue-400 text-sm mt-0.5">{formatNumber(hoveredCell.value)}</div>
+                  <div className="text-[9px] text-zinc-400 font-mono">{hoveredCell.lat.toFixed(1)}°N {Math.abs(hoveredCell.lon).toFixed(1)}°W</div>
+                  <div className="font-mono font-bold text-blue-400 text-xs">{formatNumber(hoveredCell.value)}</div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Timeline Animation Deck */}
+          {/* Timeline Animation Deck Container Layout */}
           {gridData.times && gridData.times.length > 1 && (
-            <div className="space-y-2 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800/60">
+            <div className="space-y-2 bg-zinc-900/30 p-3 sm:p-4 rounded-xl border border-zinc-800/60">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold">Time Step Position</span>
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold">Timeline Range</span>
                 <span className="text-xs font-mono text-zinc-300 font-semibold">{timeLabel}</span>
               </div>
               <input 
@@ -512,12 +516,12 @@ export default function USHeatMap() {
                 value={timeIdx}
                 step={1}
                 onChange={(e) => setTimeIdx(Number(e.target.value))}
-                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500 transition-all hover:bg-zinc-700 focus:outline-none"
+                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500 transition-all focus:outline-none"
               />
               <div className="flex justify-between text-[10px] font-mono text-zinc-500">
-                <span>{gridData.times[0] ? new Date(gridData.times[0] * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Start'}</span>
-                <span className="bg-zinc-800/60 px-2 py-0.5 rounded border border-zinc-700/30">{gridData.times.length} frames</span>
-                <span>{gridData.times.at(-1) ? new Date(gridData.times.at(-1) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'End'}</span>
+                <span>{new Date(gridData.times[0] * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                <span className="bg-zinc-800/40 px-1.5 py-0.5 rounded text-[9px] border border-zinc-800">{gridData.times.length} frames</span>
+                <span>{new Date(gridData.times.at(-1) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
               </div>
             </div>
           )}
@@ -525,8 +529,8 @@ export default function USHeatMap() {
       )}
 
       {!gridData && !isFetching && (
-        <div className="flex flex-col items-center justify-center py-16 text-center border-2 border-dashed border-zinc-800/60 rounded-2xl bg-zinc-900/10">
-          <p className="text-sm text-zinc-500 max-w-sm">Configure your parameters above and click Fetch to parse data matrices directly onto the canvas grid mapping engine.</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center border-2 border-dashed border-zinc-800 rounded-2xl bg-zinc-900/10">
+          <p className="text-sm text-zinc-500 max-w-sm">Configure parameters above and execute data lookup to initialize the weather heatmap mesh layer.</p>
         </div>
       )}
     </div>
