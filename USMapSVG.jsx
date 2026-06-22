@@ -65,6 +65,7 @@ export const CITY_MARKERS = [
   [-71.1, 42.4, 'Boston'],
   [-122.4, 37.8, 'San Francisco'],
   [-96.8, 32.8, 'Dallas'],
+  [-79.9, 40.4, 'Pittsburgh'], 
   [-81.4, 28.5, 'Orlando'],
   [-79.4, 43.7, 'Toronto'],
   [-73.6, 45.5, 'Montreal'],
