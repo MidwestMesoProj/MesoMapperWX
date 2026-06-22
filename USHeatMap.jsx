@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
-// Changed to Capital F
-import { formatNumber } from './FormulaEngine'; 
+// Changed to direct root file pathing with fallback extension matching
+import { formatNumber } from './formulaEngine.js'; 
 import { lonLatToXY, xyToLonLat, STATE_LABELS, CITY_MARKERS, US_VIEWBOX } from './USMapSVG';
 import MapModeForm from './MapModeForm';
-// Changed to Capital F
-import { parseApiResponse, evaluateFormula } from './FormulaEngine';
+// Changed to direct root file pathing with fallback extension matching
+import { parseApiResponse, evaluateFormula } from './formulaEngine.js';
 
 function lerpStops(stops, t, alpha = 210) {
   for (let i = 0; i < stops.length - 1; i++) {
