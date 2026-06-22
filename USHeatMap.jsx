@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
-// Fixed path to look in the root folder instead of @/lib/
-import { formatNumber } from './formulaEngine';
+// Changed to Capital F
+import { formatNumber } from './FormulaEngine'; 
 import { lonLatToXY, xyToLonLat, STATE_LABELS, CITY_MARKERS, US_VIEWBOX } from './USMapSVG';
 import MapModeForm from './MapModeForm';
-// Fixed path here as well!
-import { parseApiResponse, evaluateFormula } from './formulaEngine';
+// Changed to Capital F
+import { parseApiResponse, evaluateFormula } from './FormulaEngine';
 
 function lerpStops(stops, t, alpha = 210) {
   for (let i = 0; i < stops.length - 1; i++) {
