@@ -1,13 +1,14 @@
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 
-// Changed these imports because your files are sitting directly in the root directory!
+// Kept your local file paths exactly as they are
 import AppLayout from './AppLayout'; 
-import Dashboard from './USHeatMap'; // Using your USHeatMap/Map components as the main view
-import FormulaLibrary from './FormulaManager'; // Using your FormulaManager as the library view
+import Dashboard from './USHeatMap'; 
+import FormulaLibrary from './FormulaManager'; 
 
 function App() {
   return (
-    <Router>
+    // Added basename so React Router knows it's hosted in a subfolder on GitHub Pages
+    <Router basename="/MesoMapperWX">
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
