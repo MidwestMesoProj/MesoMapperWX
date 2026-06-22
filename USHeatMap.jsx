@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { lonLatToXY, xyToLonLat, STATE_LABELS, CITY_MARKERS, US_VIEWBOX } from './USMapSVG';
 import MapModeForm from './MapModeForm';
 
@@ -48,21 +48,19 @@ function parseBulkResponse(jsonArray, section, formula) {
 }
 // ----------------------------------------
 
-function lerpStops(stops, t, alpha = 210) {
+function lerpStops(stops, t, alpha = 0.85) {
   for (let i = 0; i < stops.length - 1; i++) {
     const [t0, c0] = stops[i], [t1, c1] = stops[i + 1];
     if (t >= t0 && t <= t1) {
       const f = (t - t0) / (t1 - t0);
-      return [
-        Math.round(c0[0] + (c1[0] - c0[0]) * f),
-        Math.round(c0[1] + (c1[1] - c0[1]) * f),
-        Math.round(c0[2] + (c1[2] - c0[2]) * f),
-        alpha,
-      ];
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+      return `rgba(${r},${g},${b},${alpha})`;
     }
   }
   const last = stops[stops.length - 1][1];
-  return [...last, alpha];
+  return `rgba(${last[0]},${last[1]},${last[2]},${alpha})`;
 }
 
 const COLOR_SCHEMES = {
@@ -73,7 +71,12 @@ const COLOR_SCHEMES = {
   cool:     (t) => lerpStops([[0,[0,255,255]],[0.5,[128,0,255]],[1.0,[255,0,180]]], t),
   storm:    (t) => lerpStops([[0,[8,8,32]],[0.2,[0,30,120]],[0.45,[0,140,220]],[0.65,[80,220,100]],[0.82,[255,230,0]],[0.93,[255,80,0]],[1.0,[220,0,220]]], t),
   divergent:(t) => lerpStops([[0,[0,100,220]],[0.35,[100,180,255]],[0.5,[245,245,245]],[0.65,[255,160,100]],[1.0,[200,0,0]]], t),
-  classic:  (t) => [Math.round(t*255), Math.round(50+(1-Math.abs(t-0.5)*2)*160), Math.round((1-t)*255), 210],
+  classic:  (t) => {
+    const r = Math.round(t*255);
+    const g = Math.round(50+(1-Math.abs(t-0.5)*2)*160);
+    const b = Math.round((1-t)*255);
+    return `rgba(${r},${g},${b},0.85)`;
+  }
 };
 
 const LEGEND_GRADIENTS = {
@@ -149,8 +152,6 @@ function buildGridPoints(cols, rows) {
 }
 
 export default function USHeatMap() {
-  const canvasRef = useRef(null);
-  const svgRef = useRef(null);
   const [isFetching, setIsFetching] = useState(false);
   const [fetchProgress, setFetchProgress] = useState(null);
   const [gridData, setGridData] = useState(null);
@@ -159,57 +160,6 @@ export default function USHeatMap() {
   const [hoveredCell, setHoveredCell] = useState(null);
   const [error, setError] = useState('');
   const [useBulk, setUseBulk] = useState(true);
-
-  // Dynamic Rendering Loop using accurate explicit coordinates derived directly from Map Dimensions
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !gridData) return;
-    const ctx = canvas.getContext('2d');
-    
-    // Explicitly pair internal canvas resolution coordinate structure to match viewbox sizing
-    const W = 960, H = 600;
-    canvas.width = W;
-    canvas.height = H;
-    ctx.clearRect(0, 0, W, H);
-
-    const { points, timeSteps, cols, rows } = gridData;
-    const step = timeSteps[Math.min(timeIdx, timeSteps.length - 1)];
-    if (!step) return;
-
-    const values = step.map(v => v?.value);
-    const valid = values.filter(v => v != null && isFinite(v));
-    if (!valid.length) return;
-
-    const minV = Math.min(...valid);
-    const maxV = Math.max(...valid);
-    const range = maxV - minV || 1;
-    const colorFn = COLOR_SCHEMES[colorScheme] || COLOR_SCHEMES.thermal;
-
-    // Standardize mapping base frame bounds explicitly
-    const [gridX0, gridY0] = lonLatToXY(GRID_LON_MIN, GRID_LAT_MAX);
-    const [gridX1, gridY1] = lonLatToXY(GRID_LON_MAX, GRID_LAT_MIN);
-    
-    const gridPxW = gridX1 - gridX0;
-    const gridPxH = gridY1 - gridY0;
-    const cellPxW = gridPxW / cols;
-    const cellPxH = gridPxH / rows;
-
-    for (let i = 0; i < points.length; i++) {
-      const { col, row } = points[i];
-      const val = values[i];
-      if (val == null || !isFinite(val)) continue;
-
-      const t = Math.max(0, Math.min(1, (val - minV) / range));
-      const [r, g, b, a] = colorFn(t);
-
-      const px = gridX0 + col * cellPxW;
-      const py = gridY0 + row * cellPxH;
-
-      // Slight overlap compensation padding prevents empty lines on multi-resolution scales
-      ctx.fillStyle = `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
-      ctx.fillRect(px - 0.4, py - 0.4, cellPxW + 0.8, cellPxH + 0.8);
-    }
-  }, [gridData, timeIdx, colorScheme]);
 
   const handleFetch = useCallback(async (config) => {
     setIsFetching(true);
@@ -322,30 +272,44 @@ export default function USHeatMap() {
     return { min: vals[0], max: vals[vals.length - 1], avg: sum / vals.length, count: vals.length };
   }, [gridData, timeIdx]);
 
-  const handleCanvasHover = (e) => {
-    if (!gridData || !svgRef.current) return;
-    const rect = svgRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 960;
-    const y = ((e.clientY - rect.top) / rect.height) * 600;
-    const [lon, lat] = xyToLonLat(x, y);
+  // Pre-calculate colored cell rect parameters entirely mapping to the SVG grid projection coordinates
+  const renderedCells = useMemo(() => {
+    if (!gridData) return [];
+    const step = gridData.timeSteps[Math.min(timeIdx, gridData.timeSteps.length - 1)];
+    if (!step || !stepStats) return [];
 
-    const { points, timeSteps } = gridData;
-    const step = timeSteps[timeIdx];
-    if (!step) return;
+    const { points, cols, rows } = gridData;
+    const range = stepStats.max - stepStats.min || 1;
+    const colorFn = COLOR_SCHEMES[colorScheme] || COLOR_SCHEMES.thermal;
 
-    const cellLonW = (GRID_LON_MAX - GRID_LON_MIN) / gridData.cols;
-    const cellLatH = (GRID_LAT_MAX - GRID_LAT_MIN) / gridData.rows;
+    const [gridX0, gridY0] = lonLatToXY(GRID_LON_MIN, GRID_LAT_MAX);
+    const [gridX1, gridY1] = lonLatToXY(GRID_LON_MAX, GRID_LAT_MIN);
+    const gridPxW = gridX1 - gridX0;
+    const gridPxH = gridY1 - gridY0;
+    const cellPxW = gridPxW / cols;
+    const cellPxH = gridPxH / rows;
 
-    const idx = points.findIndex(p =>
-      Math.abs(p.lon - lon) < cellLonW / 2 &&
-      Math.abs(p.lat - lat) < cellLatH / 2
-    );
-    if (idx >= 0 && step[idx]) {
-      setHoveredCell({ ...points[idx], value: step[idx].value, x: e.clientX, y: e.clientY });
-    } else {
-      setHoveredCell(null);
-    }
-  };
+    return points.map((pt, i) => {
+      const val = step[i]?.value;
+      if (val == null || !isFinite(val)) return null;
+
+      const t = Math.max(0, Math.min(1, (val - stepStats.min) / range));
+      const fillString = colorFn(t);
+      const px = gridX0 + pt.col * cellPxW;
+      const py = gridY0 + pt.row * cellPxH;
+
+      return {
+        id: i,
+        x: px - 0.2,
+        y: py - 0.2,
+        w: cellPxW + 0.4,
+        h: cellPxH + 0.4,
+        fill: fillString,
+        cell: pt,
+        value: val
+      };
+    }).filter(Boolean);
+  }, [gridData, timeIdx, colorScheme, stepStats]);
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-4 p-2 md:p-4 pb-12 select-none">
@@ -359,10 +323,10 @@ export default function USHeatMap() {
 
       {gridData && (
         <>
-          {/* Controls Bar - Wrapped dynamically for zero text collisions */}
-          <div className="flex flex-col gap-3 p-3 rounded-xl border border-zinc-800 bg-zinc-900/50 md:flex-row md:items-center md:justify-between">
-            {/* Color Scheme Picker (Scrolls horizontally on small viewports instead of overlapping) */}
-            <div className="flex overflow-x-auto gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 scrollbar-none max-w-full">
+          {/* Top Panel Controls Header Layout */}
+          <div className="flex flex-col gap-3 p-3 rounded-xl border border-zinc-800 bg-zinc-900/50 sm:flex-row sm:items-center sm:justify-between">
+            {/* Color Scheme Picker Bar (Ensures horizontal scrolling on mobile, zero overlapping text strings) */}
+            <div className="flex overflow-x-auto gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 max-w-full scrollbar-none shrink-0">
               {Object.keys(COLOR_SCHEMES).map(cs => (
                 <button
                   key={cs}
@@ -378,8 +342,8 @@ export default function USHeatMap() {
               ))}
             </div>
 
-            {/* Metrics HUD Displays */}
-            <div className="flex items-center justify-between gap-3 md:justify-end shrink-0">
+            {/* Weather Analytics Dashboard Metrics */}
+            <div className="flex items-center justify-between gap-3 sm:justify-end shrink-0 w-full sm:w-auto">
               {stepStats && (
                 <div className="flex items-center gap-3 text-xs font-mono bg-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-800/60">
                   <span className="text-zinc-500">min:<span className="text-blue-400 font-bold ml-1">{formatNumber(stepStats.min)}</span></span>
@@ -396,102 +360,121 @@ export default function USHeatMap() {
             </div>
           </div>
 
-          {/* Locked View Sandbox Frame */}
+          {/* Unified Map Window Box */}
           <div className="w-full relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl aspect-[960/600]">
-            {/* Layer 1: Color Matrix Map Array */}
-            <canvas
-              ref={canvasRef}
-              className="absolute inset-0 w-full h-full block pointer-events-none z-0"
-              style={{ imageRendering: gridData.cols >= 40 ? 'auto' : 'pixelated' }}
-            />
-
-            {/* Layer 2: Vector Overlay & Grid Indicators */}
             <svg
-              ref={svgRef}
               viewBox={US_VIEWBOX}
               className="absolute inset-0 w-full h-full block cursor-crosshair z-10"
-              onMouseMove={handleCanvasHover}
-              onMouseLeave={() => setHoveredCell(null)}
             >
-              {STATE_LABELS.map(([lon, lat, abbr]) => {
-                const [x, y] = lonLatToXY(lon, lat);
-                return (
-                  <text key={abbr} x={x} y={y} textAnchor="middle" dominantBaseline="middle"
-                    fontSize={9} fill="rgba(255,255,255,0.85)" fontFamily="monospace" fontWeight="700"
-                    style={{ pointerEvents: 'none', textShadow: '0 1.5px 3px rgba(0,0,0,0.95)' }}>
-                    {abbr}
-                  </text>
-                );
-              })}
+              {/* Layer 1: Solid Dark Base Ocean Background */}
+              <rect width="100%" height="100%" fill="hsl(215,22%,14%)" />
 
-              {CITY_MARKERS.map(([lon, lat, name]) => {
-                const [x, y] = lonLatToXY(lon, lat);
-                const isLarge = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Dallas', 'Miami', 'Seattle', 'San Francisco'].includes(name);
-                return (
-                  <g key={name} style={{ pointerEvents: 'none' }}>
-                    <circle cx={x} cy={y} r={isLarge ? 3 : 2} fill="rgba(255,255,255,0.95)" stroke="rgba(0,0,0,0.6)" strokeWidth={0.8} />
-                    <text x={x} y={y - 5} textAnchor="middle" fontSize={isLarge ? 7.5 : 6.5}
-                      fill="rgba(255,255,255,0.9)" fontFamily="sans-serif" fontWeight="500"
-                      style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.85)', strokeWidth: 2, strokeLinejoin: 'round' }}>
-                      {name}
+              {/* Layer 2: Vector Matrix Map Array (Directly integrated inside the SVG coordinate stack) */}
+              <g id="heatmap-grid-mesh">
+                {renderedCells.map(cell => (
+                  <rect
+                    key={cell.id}
+                    x={cell.x}
+                    y={cell.y}
+                    width={cell.w}
+                    height={cell.h}
+                    fill={cell.fill}
+                    className="transition-colors duration-150 ease-out"
+                    onMouseEnter={() => setHoveredCell({ ...cell.cell, value: cell.value })}
+                    onMouseLeave={() => setHoveredCell(null)}
+                  />
+                ))}
+              </g>
+
+              {/* Layer 3: Longitude and Latitude Grid Lines */}
+              <g id="map-graticule-lines" style={{ pointerEvents: 'none' }}>
+                {[-120, -110, -100, -90, -80, -70].map(lon => {
+                  const [x] = lonLatToXY(lon, 37);
+                  return (
+                    <g key={lon}>
+                      <line x1={x} y1={18} x2={x} y2={582} stroke="rgba(255,255,255,0.04)" strokeWidth={0.5} />
+                      <text x={x} y={593} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.35)" fontFamily="monospace">{lon}°</text>
+                    </g>
+                  );
+                })}
+                {[30, 35, 40, 45].map(lat => {
+                  const [, y] = lonLatToXY(-127, lat);
+                  return (
+                    <g key={lat}>
+                      <line x1={18} y1={y} x2={942} y2={y} stroke="rgba(255,255,255,0.04)" strokeWidth={0.5} />
+                      <text x={12} y={y + 3} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.35)" fontFamily="monospace">{lat}°</text>
+                    </g>
+                  );
+                })}
+              </g>
+
+              {/* Layer 4: State Abbreviations Text */}
+              <g id="state-labels-overlay" style={{ pointerEvents: 'none' }}>
+                {STATE_LABELS.map(([lon, lat, abbr]) => {
+                  const [x, y] = lonLatToXY(lon, lat);
+                  return (
+                    <text key={abbr} x={x} y={y} textAnchor="middle" dominantBaseline="middle"
+                      fontSize={9} fill="rgba(255,255,255,0.85)" fontFamily="monospace" fontWeight="700"
+                      style={{ textShadow: '0 1.5px 3px rgba(0,0,0,0.95)' }}>
+                      {abbr}
                     </text>
-                  </g>
-                );
-              })}
+                  );
+                })}
+              </g>
 
-              {[-120, -110, -100, -90, -80, -70].map(lon => {
-                const [x] = lonLatToXY(lon, 37);
-                return (
-                  <g key={lon}>
-                    <line x1={x} y1={18} x2={x} y2={582} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
-                    <text x={x} y={593} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)">{lon}°</text>
-                  </g>
-                );
-              })}
-              {[30, 35, 40, 45].map(lat => {
-                const [, y] = lonLatToXY(-127, lat);
-                return (
-                  <g key={lat}>
-                    <line x1={18} y1={y} x2={942} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
-                    <text x={12} y={y + 3} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)">{lat}°</text>
-                  </g>
-                );
-              })}
+              {/* Layer 5: Target Major Metro Locations Map Pins */}
+              <g id="city-markers-overlay" style={{ pointerEvents: 'none' }}>
+                {CITY_MARKERS.map(([lon, lat, name]) => {
+                  const [x, y] = lonLatToXY(lon, lat);
+                  const isLarge = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Dallas', 'Miami', 'Seattle', 'San Francisco'].includes(name);
+                  return (
+                    <g key={name}>
+                      <circle cx={x} cy={y} r={isLarge ? 2.5 : 1.8} fill="rgba(255,255,255,0.95)" stroke="rgba(0,0,0,0.5)" strokeWidth={0.6} />
+                      <text x={x} y={y - 5} textAnchor="middle" fontSize={isLarge ? 7.5 : 6.5}
+                        fill="rgba(255,255,255,0.9)" fontFamily="sans-serif" fontWeight="500"
+                        style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.85)', strokeWidth: 2, strokeLinejoin: 'round' }}>
+                        {name}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
 
-              <text x={480} y={15} textAnchor="middle" fontSize={9} fill="rgba(160,200,240,0.8)" fontFamily="monospace" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+              {/* Layer 6: Dynamic Sub-Header Info String */}
+              <text x={480} y={22} textAnchor="middle" fontSize={9} fill="rgba(160,200,240,0.7)" fontFamily="monospace" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.85)', pointerEvents: 'none' }}>
                 {gridData.formula}  ·  {gridData.cols}×{gridData.rows} grid  ·  {gridData.config?.model}
               </text>
             </svg>
 
-            {/* Layer 3: Absolute Vertical Overlay Legend Scale */}
-            <div className="absolute top-3 right-3 flex gap-2 items-start z-20 bg-zinc-950/80 backdrop-blur-sm p-1.5 rounded-lg border border-zinc-800/50">
+            {/* Layer 7: Absolute Scale Gradient Legend Box overlay */}
+            <div className="absolute top-3 right-3 flex gap-2 items-start z-20 bg-zinc-950/85 backdrop-blur-sm p-1.5 rounded-lg border border-zinc-800/50 pointer-events-none">
               <div className="flex flex-col items-end gap-0.5 justify-between h-16 text-[9px] font-mono">
                 {stepStats && <>
-                  <span className="font-bold text-white/80">{formatNumber(stepStats.max, 0)}</span>
+                  <span className="font-bold text-white/90">{formatNumber(stepStats.max, 0)}</span>
                   <span className="text-white/40">{formatNumber(stepStats.avg, 0)}</span>
-                  <span className="font-bold text-white/80">{formatNumber(stepStats.min, 0)}</span>
+                  <span className="font-bold text-white/90">{formatNumber(stepStats.min, 0)}</span>
                 </>}
               </div>
               <div className="w-2 rounded-sm h-16" style={{ background: LEGEND_GRADIENTS[colorScheme] }} />
             </div>
 
-            {/* Layer 4: Floating Grid Tooltip Indicator */}
+            {/* Layer 8: Responsive Hover Tooltip Modal */}
             {hoveredCell && (
               <div
                 className="pointer-events-none absolute z-30 rounded-lg px-2 py-1 text-xs shadow-xl border border-zinc-700 bg-zinc-900/95 text-white whitespace-nowrap hidden sm:block"
                 style={{
                   left: `${((hoveredCell.col + 0.5) / gridData.cols) * 100}%`,
                   top: `${((hoveredCell.row + 0.5) / gridData.rows) * 100}%`,
-                  transform: 'translate(-50%, -130%)'
+                  transform: 'translate(-50%, -135%)'
                 }}
               >
-                <div className="text-[9px] text-zinc-400 font-mono">{hoveredCell.lat.toFixed(1)}°N {Math.abs(hoveredCell.lon).toFixed(1)}°W</div>
+                <div className="text-[9px] text-zinc-400 font-mono">{hoveredCell.lat.toFixed(2)}°N {Math.abs(hoveredCell.lon).toFixed(2)}°W</div>
                 <div className="font-mono font-bold text-blue-400 text-xs text-center">{formatNumber(hoveredCell.value)}</div>
               </div>
             )}
           </div>
 
-          {/* Time Navigation deck controller */}
+          {/* Dynamic Animation Navigation Control Deck Container */}
           {gridData.times && gridData.times.length > 1 && (
             <div className="space-y-2 bg-zinc-900/30 p-3 sm:p-4 rounded-xl border border-zinc-800/60">
               <div className="flex items-center justify-between">
@@ -519,7 +502,7 @@ export default function USHeatMap() {
 
       {!gridData && !isFetching && (
         <div className="flex flex-col items-center justify-center py-16 text-center border-2 border-dashed border-zinc-800 rounded-2xl bg-zinc-900/10">
-          <p className="text-sm text-zinc-500 max-w-sm">Configure parameters above and click Fetch to compute the unified mesh geometry layers.</p>
+          <p className="text-sm text-zinc-500 max-w-sm">Configure parameters above and click Fetch to compute the integrated grid matrix layers.</p>
         </div>
       )}
     </div>
