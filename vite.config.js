@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/react-refresh'; // or '@vitejs/plugin-react' depending on your file
+import react from '@vitejs/plugin-react';
 
+// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/MesoMapperWX/', // <-- ADD THIS LINE RIGHT HERE
+  base: '/MesoMapperWX/', // Directs GitHub Pages to your specific repository path
 });
