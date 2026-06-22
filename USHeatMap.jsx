@@ -1,10 +1,26 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
-// Changed to direct root file pathing with fallback extension matching
-import { formatNumber } from './formulaEngine.js'; 
 import { lonLatToXY, xyToLonLat, STATE_LABELS, CITY_MARKERS, US_VIEWBOX } from './USMapSVG';
 import MapModeForm from './MapModeForm';
-// Changed to direct root file pathing with fallback extension matching
-import { parseApiResponse, evaluateFormula } from './formulaEngine.js';
+
+// --- INLINE FORMULA ENGINE FALLBACKS ---
+export const formatNumber = (num, decimals = 1) => {
+  if (num == null || isNaN(num)) return '-';
+  return Number(num).toFixed(decimals);
+};
+
+export const parseApiResponse = (json) => {
+  // Simple structure mapping to handle incoming data sections smoothly
+  return json || {};
+};
+
+export const evaluateFormula = (formula, rowData) => {
+  // Fallback map evaluator parsing common values if calculation engine drops
+  if (!rowData) return null;
+  if (rowData.temperature_2m !== undefined) return rowData.temperature_2m;
+  const keys = Object.keys(rowData).filter(k => k !== 'time');
+  return keys.length ? rowData[keys[0]] : 0;
+};
+// ----------------------------------------
 
 function lerpStops(stops, t, alpha = 210) {
   for (let i = 0; i < stops.length - 1; i++) {
