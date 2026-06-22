@@ -2,6 +2,13 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { lonLatToXY, xyToLonLat, STATE_LABELS, CITY_MARKERS, US_VIEWBOX } from './USMapSVG';
 import MapModeForm from './MapModeForm';
 
+// --- COORD BOUNDS PARSED DIRECTLY FROM YOUR CORRESPONDING MAP FILE ---
+const LON_LEFT  = -127;
+const LON_RIGHT = -63;
+const LAT_TOP   = 50.5;
+const LAT_BOT   = 23.5;
+const PAD_L = 18, PAD_R = 18, PAD_T = 18, PAD_B = 18;
+
 // --- FIXED PARSING & EVALUATION PIPELINE ---
 export const formatNumber = (num, decimals = 1) => {
   if (num == null || isNaN(num)) return '-';
@@ -46,7 +53,6 @@ function parseBulkResponse(jsonArray, section, formula) {
     }).filter(r => r.value !== null);
   });
 }
-// ----------------------------------------
 
 function lerpStops(stops, t, alpha = 0.85) {
   for (let i = 0; i < stops.length - 1; i++) {
@@ -90,7 +96,7 @@ const LEGEND_GRADIENTS = {
   classic:   'linear-gradient(to top, #0000ff, #3290ff, #00c8a0, #ffcc00, #ff3200)',
 };
 
-const BULK_BATCH_SIZE = 500;
+const BULK_BATCH_SIZE = 450;
 
 function buildQueryString(pairs) {
   return pairs.map(([k, v]) => `${encodeURIComponent(k)}=${v}`).join('&');
@@ -137,40 +143,15 @@ function buildSingleUrl({ lat, lon, variables, section, model, pastDays, forecas
   return `https://api.open-meteo.com/v1/forecast?${buildQueryString(pairs)}`;
 }
 
-// Map logical bounding coordinates matching your background layer geometry layout
-const GRID_LON_MIN = -125, GRID_LON_MAX = -65, GRID_LAT_MIN = 24, GRID_LAT_MAX = 50;
-
-// --- FIXED SCREEN-SPACE GRID INVERSION GENERATOR ---
+// --- LINEAR INC-STEP GENERATION MATCHING EQUIRECTANGULAR ---
 function buildGridPoints(cols, rows) {
   const pts = [];
-  
-  // 1. Project the extreme geographical bounding vertices into actual viewbox pixel coordinates
-  const [xMinBound] = lonLatToXY(GRID_LON_MIN, 37);
-  const [xMaxBound] = lonLatToXY(GRID_LON_MAX, 37);
-  const [, yTopBound] = lonLatToXY(-100, GRID_LAT_MAX);
-  const [, yBottomBound] = lonLatToXY(-100, GRID_LAT_MIN);
-
-  const totalWidth = xMaxBound - xMinBound;
-  const totalHeight = yBottomBound - yTopBound;
-
-  // 2. Step through rows and columns linearly in screen-space, back-projecting each cell's center back to true lat/lon
   for (let row = 0; row < rows; row++) {
-    const targetY = yTopBound + ((row + 0.5) / rows) * totalHeight;
     for (let col = 0; col < cols; col++) {
-      const targetX = xMinBound + ((col + 0.5) / cols) * totalWidth;
-
-      // Inverse convert the absolute screen coordinates to structural lat/lon coordinates
-      const [lon, lat] = xyToLonLat(targetX, targetY);
-
-      pts.push({ 
-        col, 
-        row, 
-        lon, 
-        lat,
-        // Save targeted layout anchors to keep geometry drawing clean
-        targetX,
-        targetY
-      });
+      // Step linearly directly through your exact lon/lat map matrix bounds
+      const lon = LON_LEFT + ((col + 0.5) / cols) * (LON_RIGHT - LON_LEFT);
+      const lat = LAT_TOP - ((row + 0.5) / rows) * (LAT_TOP - LAT_BOT);
+      pts.push({ col, row, lon, lat });
     }
   }
   return pts;
@@ -257,7 +238,7 @@ export default function USHeatMap() {
 
     const firstResult = results.find(r => r && r.length > 0);
     if (!firstResult) {
-      setError('No data returned. Check parameters and API variables layout.');
+      setError('No data points returned for this location window grid.');
       setIsFetching(false);
       setFetchProgress(null);
       return;
@@ -297,7 +278,7 @@ export default function USHeatMap() {
     return { min: vals[0], max: vals[vals.length - 1], avg: sum / vals.length, count: vals.length };
   }, [gridData, timeIdx]);
 
-  // --- FIXED SCREEN-SPACE RENDER LAYOUT SYSTEM ---
+  // --- COMPUTE PERFECT LINEAR BOX RECTS OVER FULL SPACE ---
   const renderedCells = useMemo(() => {
     if (!gridData || !stepStats) return [];
     const step = gridData.timeSteps[Math.min(timeIdx, gridData.timeSteps.length - 1)];
@@ -307,14 +288,12 @@ export default function USHeatMap() {
     const range = stepStats.max - stepStats.min || 1;
     const colorFn = COLOR_SCHEMES[colorScheme] || COLOR_SCHEMES.thermal;
 
-    // Determine precise cell sizes directly in screen space viewbox pixel sizing
-    const [xMinBound] = lonLatToXY(GRID_LON_MIN, 37);
-    const [xMaxBound] = lonLatToXY(GRID_LON_MAX, 37);
-    const [, yTopBound] = lonLatToXY(-100, GRID_LAT_MAX);
-    const [, yBottomBound] = lonLatToXY(-100, GRID_LAT_MIN);
+    // Direct pixel span inside your explicit padding boundary width lengths
+    const fullAvailableW = 960 - PAD_L - PAD_R;
+    const fullAvailableH = 600 - PAD_T - PAD_B;
 
-    const cellW = (xMaxBound - xMinBound) / cols;
-    const cellH = (yBottomBound - yTopBound) / rows;
+    const cellW = fullAvailableW / cols;
+    const cellH = fullAvailableH / rows;
 
     return points.map((pt, i) => {
       const val = step[i]?.value;
@@ -323,13 +302,15 @@ export default function USHeatMap() {
       const t = Math.max(0, Math.min(1, (val - stepStats.min) / range));
       const fillString = colorFn(t);
 
-      // Render rect directly centered around its screen-space grid node anchor
+      // Use native projection function coordinates directly
+      const [pixelX, pixelY] = lonLatToXY(pt.lon, pt.lat);
+
       return {
         id: i,
-        x: pt.targetX - cellW / 2 - 0.2,
-        y: pt.targetY - cellH / 2 - 0.2,
-        w: cellW + 0.4,
-        h: cellH + 0.4,
+        x: pixelX - cellW / 2 - 0.15,
+        y: pixelY - cellH / 2 - 0.15,
+        w: cellW + 0.3,
+        h: cellH + 0.3,
         fill: fillString,
         cell: pt,
         value: val
@@ -390,7 +371,7 @@ export default function USHeatMap() {
             >
               <rect width="100%" height="100%" fill="hsl(215,22%,12%)" />
 
-              {/* Geo-aligned Screen-Space Mesh Layer */}
+              {/* UNWARPED HEATMAP MESH GRID */}
               <g id="heatmap-grid-mesh">
                 {renderedCells.map(cell => (
                   <rect
@@ -400,35 +381,35 @@ export default function USHeatMap() {
                     width={cell.w}
                     height={cell.h}
                     fill={cell.fill}
-                    onMouseEnter={() => setHoveredCell({ ...cell.cell, value: cell.value })}
+                    onMouseEnter={() => setHoveredCell({ ...cell.cell, value: cell.value, x: cell.x, y: cell.y, w: cell.w, h: cell.h })}
                     onMouseLeave={() => setHoveredCell(null)}
                   />
                 ))}
               </g>
 
-              {/* Graticule Projection References lines */}
+              {/* Linear Map Graticules */}
               <g id="map-graticule-lines" style={{ pointerEvents: 'none' }}>
                 {[-120, -110, -100, -90, -80, -70].map(lon => {
                   const [x] = lonLatToXY(lon, 37);
                   return (
                     <g key={lon}>
-                      <line x1={x} y1={18} x2={x} y2={582} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
-                      <text x={x} y={593} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)" fontFamily="monospace">{lon}°</text>
+                      <line x1={x} y1={PAD_T} x2={x} y2={600 - PAD_B} stroke="rgba(255,255,255,0.07)" strokeWidth={0.5} />
+                      <text x={x} y={594} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)" fontFamily="monospace">{lon}°W</text>
                     </g>
                   );
                 })}
-                {[30, 35, 40, 45].map(lat => {
+                {[25, 30, 35, 40, 45, 50].map(lat => {
                   const [, y] = lonLatToXY(-100, lat);
                   return (
                     <g key={lat}>
-                      <line x1={18} y1={y} x2={942} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
-                      <text x={12} y={y + 3} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)" fontFamily="monospace">{lat}°</text>
+                      <line x1={PAD_L} y1={y} x2={960 - PAD_R} y2={y} stroke="rgba(255,255,255,0.07)" strokeWidth={0.5} />
+                      <text x={11} y={y + 3} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)" fontFamily="monospace">{lat}°N</text>
                     </g>
                   );
                 })}
               </g>
 
-              {/* State Abbreviations Overlay labels */}
+              {/* State Labels Overlay */}
               <g id="state-labels-overlay" style={{ pointerEvents: 'none' }}>
                 {STATE_LABELS.map(([lon, lat, abbr]) => {
                   const [x, y] = lonLatToXY(lon, lat);
@@ -442,7 +423,7 @@ export default function USHeatMap() {
                 })}
               </g>
 
-              {/* Cities Reference layer pins */}
+              {/* City Reference Layer Pins */}
               <g id="city-markers-overlay" style={{ pointerEvents: 'none' }}>
                 {CITY_MARKERS.map(([lon, lat, name]) => {
                   const [x, y] = lonLatToXY(lon, lat);
@@ -465,7 +446,7 @@ export default function USHeatMap() {
               </text>
             </svg>
 
-            {/* Gradient Scale Overlay Legend Panel */}
+            {/* Gradient scale panel */}
             <div className="absolute top-3 right-3 flex gap-2 items-start z-20 bg-zinc-950/85 backdrop-blur-sm p-1.5 rounded-lg border border-zinc-800/50 pointer-events-none">
               <div className="flex flex-col items-end gap-0.5 justify-between h-16 text-[9px] font-mono">
                 {stepStats && <>
@@ -477,13 +458,13 @@ export default function USHeatMap() {
               <div className="w-2 rounded-sm h-16" style={{ background: LEGEND_GRADIENTS[colorScheme] }} />
             </div>
 
-            {/* Interactive Projected Overlay Popovers */}
+            {/* Hover Tooltips centered to target rect frames */}
             {hoveredCell && (
               <div
                 className="pointer-events-none absolute z-30 rounded-lg px-2 py-1 text-xs shadow-xl border border-zinc-700 bg-zinc-900/95 text-white whitespace-nowrap hidden sm:block"
                 style={{
-                  left: `${((hoveredCell.col + 0.5) / gridData.cols) * 100}%`,
-                  top: `${((hoveredCell.row + 0.5) / gridData.rows) * 100}%`,
+                  left: `${((hoveredCell.x + hoveredCell.w / 2) / 960) * 100}%`,
+                  top: `${((hoveredCell.y + hoveredCell.h / 2) / 600) * 100}%`,
                   transform: 'translate(-50%, -135%)'
                 }}
               >
@@ -523,4 +504,4 @@ export default function USHeatMap() {
       )}
     </div>
   );
-                       }
+  }
