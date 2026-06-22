@@ -1,0 +1,49 @@
+{
+  "name": "SavedFormula",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the saved formula"
+    },
+    "formula": {
+      "type": "string",
+      "description": "The mathematical formula string"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of what the formula measures"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "tornado",
+        "hail",
+        "wind",
+        "instability",
+        "moisture",
+        "custom"
+      ],
+      "default": "custom",
+      "description": "Category of the formula"
+    },
+    "color_ramp": {
+      "type": "string",
+      "enum": [
+        "default",
+        "thermal",
+        "moisture",
+        "divergent"
+      ],
+      "default": "default"
+    },
+    "is_preset": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "name",
+    "formula"
+  ]
+}
