@@ -1,9 +1,10 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
-// 1. Removed the missing shadcn Slider import
-import { formatNumber } from '@/lib/formulaEngine';
+// Fixed path to look in the root folder instead of @/lib/
+import { formatNumber } from './formulaEngine';
 import { lonLatToXY, xyToLonLat, STATE_LABELS, CITY_MARKERS, US_VIEWBOX } from './USMapSVG';
 import MapModeForm from './MapModeForm';
-import { parseApiResponse, evaluateFormula } from '@/lib/formulaEngine';
+// Fixed path here as well!
+import { parseApiResponse, evaluateFormula } from './formulaEngine';
 
 function lerpStops(stops, t, alpha = 210) {
   for (let i = 0; i < stops.length - 1; i++) {
