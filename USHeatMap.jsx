@@ -137,16 +137,40 @@ function buildSingleUrl({ lat, lon, variables, section, model, pastDays, forecas
   return `https://api.open-meteo.com/v1/forecast?${buildQueryString(pairs)}`;
 }
 
-// Map frame boundaries matching your background grid layout bounds exactly
+// Map logical bounding coordinates matching your background layer geometry layout
 const GRID_LON_MIN = -125, GRID_LON_MAX = -65, GRID_LAT_MIN = 24, GRID_LAT_MAX = 50;
 
+// --- FIXED SCREEN-SPACE GRID INVERSION GENERATOR ---
 function buildGridPoints(cols, rows) {
   const pts = [];
+  
+  // 1. Project the extreme geographical bounding vertices into actual viewbox pixel coordinates
+  const [xMinBound] = lonLatToXY(GRID_LON_MIN, 37);
+  const [xMaxBound] = lonLatToXY(GRID_LON_MAX, 37);
+  const [, yTopBound] = lonLatToXY(-100, GRID_LAT_MAX);
+  const [, yBottomBound] = lonLatToXY(-100, GRID_LAT_MIN);
+
+  const totalWidth = xMaxBound - xMinBound;
+  const totalHeight = yBottomBound - yTopBound;
+
+  // 2. Step through rows and columns linearly in screen-space, back-projecting each cell's center back to true lat/lon
   for (let row = 0; row < rows; row++) {
+    const targetY = yTopBound + ((row + 0.5) / rows) * totalHeight;
     for (let col = 0; col < cols; col++) {
-      const lon = GRID_LON_MIN + ((col + 0.5) / cols) * (GRID_LON_MAX - GRID_LON_MIN);
-      const lat = GRID_LAT_MAX - ((row + 0.5) / rows) * (GRID_LAT_MAX - GRID_LAT_MIN);
-      pts.push({ col, row, lon, lat });
+      const targetX = xMinBound + ((col + 0.5) / cols) * totalWidth;
+
+      // Inverse convert the absolute screen coordinates to structural lat/lon coordinates
+      const [lon, lat] = xyToLonLat(targetX, targetY);
+
+      pts.push({ 
+        col, 
+        row, 
+        lon, 
+        lat,
+        // Save targeted layout anchors to keep geometry drawing clean
+        targetX,
+        targetY
+      });
     }
   }
   return pts;
@@ -233,7 +257,7 @@ export default function USHeatMap() {
 
     const firstResult = results.find(r => r && r.length > 0);
     if (!firstResult) {
-      setError('No data returned. Check that the selected variables are supported by this model and section.');
+      setError('No data returned. Check parameters and API variables layout.');
       setIsFetching(false);
       setFetchProgress(null);
       return;
@@ -273,7 +297,7 @@ export default function USHeatMap() {
     return { min: vals[0], max: vals[vals.length - 1], avg: sum / vals.length, count: vals.length };
   }, [gridData, timeIdx]);
 
-  // --- FIXED INDIVIDUAL CELL PROJECTION LAYOUT ENGINE ---
+  // --- FIXED SCREEN-SPACE RENDER LAYOUT SYSTEM ---
   const renderedCells = useMemo(() => {
     if (!gridData || !stepStats) return [];
     const step = gridData.timeSteps[Math.min(timeIdx, gridData.timeSteps.length - 1)];
@@ -283,9 +307,14 @@ export default function USHeatMap() {
     const range = stepStats.max - stepStats.min || 1;
     const colorFn = COLOR_SCHEMES[colorScheme] || COLOR_SCHEMES.thermal;
 
-    // Geographic width/height spans for pixel delta offsets
-    const dLon = (GRID_LON_MAX - GRID_LON_MIN) / cols;
-    const dLat = (GRID_LAT_MAX - GRID_LAT_MIN) / rows;
+    // Determine precise cell sizes directly in screen space viewbox pixel sizing
+    const [xMinBound] = lonLatToXY(GRID_LON_MIN, 37);
+    const [xMaxBound] = lonLatToXY(GRID_LON_MAX, 37);
+    const [, yTopBound] = lonLatToXY(-100, GRID_LAT_MAX);
+    const [, yBottomBound] = lonLatToXY(-100, GRID_LAT_MIN);
+
+    const cellW = (xMaxBound - xMinBound) / cols;
+    const cellH = (yBottomBound - yTopBound) / rows;
 
     return points.map((pt, i) => {
       const val = step[i]?.value;
@@ -294,19 +323,13 @@ export default function USHeatMap() {
       const t = Math.max(0, Math.min(1, (val - stepStats.min) / range));
       const fillString = colorFn(t);
 
-      // Map cell corners dynamically via your custom map projection module
-      const [xLeft, yTop] = lonLatToXY(pt.lon - dLon / 2, pt.lat + dLat / 2);
-      const [xRight, yBottom] = lonLatToXY(pt.lon + dLon / 2, pt.lat - dLat / 2);
-
-      const width = Math.abs(xRight - xLeft);
-      const height = Math.abs(yBottom - yTop);
-
+      // Render rect directly centered around its screen-space grid node anchor
       return {
         id: i,
-        x: xLeft - 0.3,
-        y: yTop - 0.3,
-        w: width + 0.6,
-        h: height + 0.6,
+        x: pt.targetX - cellW / 2 - 0.2,
+        y: pt.targetY - cellH / 2 - 0.2,
+        w: cellW + 0.4,
+        h: cellH + 0.4,
         fill: fillString,
         cell: pt,
         value: val
@@ -326,7 +349,6 @@ export default function USHeatMap() {
 
       {gridData && (
         <>
-          {/* Controls Bar Header Panel */}
           <div className="flex flex-col gap-3 p-3 rounded-xl border border-zinc-800 bg-zinc-900/50 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex overflow-x-auto gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 max-w-full scrollbar-none shrink-0">
               {Object.keys(COLOR_SCHEMES).map(cs => (
@@ -361,15 +383,14 @@ export default function USHeatMap() {
             </div>
           </div>
 
-          {/* Map Frame Window Viewbox */}
           <div className="w-full relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl aspect-[960/600]">
             <svg
               viewBox={US_VIEWBOX}
               className="absolute inset-0 w-full h-full block cursor-crosshair z-10"
             >
-              <rect width="100%" height="100%" fill="hsl(215,22%,14%)" />
+              <rect width="100%" height="100%" fill="hsl(215,22%,12%)" />
 
-              {/* Geo-aligned Heatmap Mesh */}
+              {/* Geo-aligned Screen-Space Mesh Layer */}
               <g id="heatmap-grid-mesh">
                 {renderedCells.map(cell => (
                   <rect
@@ -385,7 +406,7 @@ export default function USHeatMap() {
                 ))}
               </g>
 
-              {/* Map Reference Graticule Lines */}
+              {/* Graticule Projection References lines */}
               <g id="map-graticule-lines" style={{ pointerEvents: 'none' }}>
                 {[-120, -110, -100, -90, -80, -70].map(lon => {
                   const [x] = lonLatToXY(lon, 37);
@@ -397,7 +418,7 @@ export default function USHeatMap() {
                   );
                 })}
                 {[30, 35, 40, 45].map(lat => {
-                  const [, y] = lonLatToXY(-127, lat);
+                  const [, y] = lonLatToXY(-100, lat);
                   return (
                     <g key={lat}>
                       <line x1={18} y1={y} x2={942} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
@@ -407,7 +428,7 @@ export default function USHeatMap() {
                 })}
               </g>
 
-              {/* State Abbreviations Labels Layer */}
+              {/* State Abbreviations Overlay labels */}
               <g id="state-labels-overlay" style={{ pointerEvents: 'none' }}>
                 {STATE_LABELS.map(([lon, lat, abbr]) => {
                   const [x, y] = lonLatToXY(lon, lat);
@@ -421,7 +442,7 @@ export default function USHeatMap() {
                 })}
               </g>
 
-              {/* Cities Vector Overlay Map Pins */}
+              {/* Cities Reference layer pins */}
               <g id="city-markers-overlay" style={{ pointerEvents: 'none' }}>
                 {CITY_MARKERS.map(([lon, lat, name]) => {
                   const [x, y] = lonLatToXY(lon, lat);
@@ -472,29 +493,26 @@ export default function USHeatMap() {
             )}
           </div>
 
-          {/* Timeline Animation Nav Controller */}
-          {gridData.times && gridData.times.length > 1 && (
-            <div className="space-y-2 bg-zinc-900/30 p-3 sm:p-4 rounded-xl border border-zinc-800/60">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold">Timeline Range</span>
-                <span className="text-xs font-mono text-zinc-300 font-semibold">{timeLabel}</span>
-              </div>
-              <input 
-                type="range"
-                min={0}
-                max={gridData.times.length - 1}
-                value={timeIdx}
-                step={1}
-                onChange={(e) => setTimeIdx(Number(e.target.value))}
-                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500 transition-all focus:outline-none"
-              />
-              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
-                <span>{new Date(gridData.times[0] * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                <span className="bg-zinc-800/40 px-1.5 py-0.5 rounded text-[9px] border border-zinc-800">{gridData.times.length} frames</span>
-                <span>{new Date(gridData.times.at(-1) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-              </div>
+          <div className="space-y-2 bg-zinc-900/30 p-3 sm:p-4 rounded-xl border border-zinc-800/60">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold">Timeline Range</span>
+              <span className="text-xs font-mono text-zinc-300 font-semibold">{timeLabel}</span>
             </div>
-          )}
+            <input 
+              type="range"
+              min={0}
+              max={gridData.times.length - 1}
+              value={timeIdx}
+              step={1}
+              onChange={(e) => setTimeIdx(Number(e.target.value))}
+              className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500 transition-all focus:outline-none"
+            />
+            <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+              <span>{new Date(gridData.times[0] * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+              <span className="bg-zinc-800/40 px-1.5 py-0.5 rounded text-[9px] border border-zinc-800">{gridData.times.length} frames</span>
+              <span>{new Date(gridData.times.at(-1) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+            </div>
+          </div>
         </>
       )}
 
@@ -505,4 +523,4 @@ export default function USHeatMap() {
       )}
     </div>
   );
-}
+        }
