@@ -347,7 +347,7 @@ export default function USHeatMap() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto space-y-4 px-2 sm:px-4 pb-6">
       <MapModeForm onFetch={(cfg) => handleFetch({ ...cfg, useBulk })} isFetching={isFetching} fetchProgress={fetchProgress} useBulk={useBulk} onToggleBulk={setUseBulk} />
 
       {error && (
@@ -358,17 +358,18 @@ export default function USHeatMap() {
 
       {gridData && (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid hsl(215,18%,20%)' }}>
+          {/* Responsive Control Bar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-zinc-900/40 p-2.5 rounded-xl border border-zinc-800/60">
+            {/* Horizontal Scrollable Buttons Container for Color Schemes on Mobile */}
+            <div className="flex overflow-x-auto no-scrollbar rounded-lg border border-zinc-800 bg-zinc-950/50 p-0.5 max-w-full shrink-0">
               {Object.keys(COLOR_SCHEMES).map(cs => (
                 <button
                   key={cs}
                   onClick={() => setColorScheme(cs)}
-                  className="h-7 px-3 text-xs font-medium transition-all capitalize"
+                  className="h-7 px-3 text-xs font-medium transition-all capitalize whitespace-nowrap rounded-md"
                   style={{
-                    background: colorScheme === cs ? 'hsl(220,14%,20%)' : 'hsl(220,12%,14%)',
-                    color: colorScheme === cs ? 'hsl(210,25%,85%)' : 'hsl(210,12%,48%)',
-                    borderRight: cs !== 'classic' ? '1px solid hsl(215,18%,20%)' : 'none',
+                    background: colorScheme === cs ? 'hsl(220,14%,24%)' : 'transparent',
+                    color: colorScheme === cs ? 'hsl(210,25%,90%)' : 'hsl(210,10%,55%)',
                   }}
                 >
                   {cs}
@@ -376,35 +377,44 @@ export default function USHeatMap() {
               ))}
             </div>
 
-            {stepStats && (
-              <div className="flex items-center gap-3 ml-auto text-[10px] font-mono">
-                <span className="text-muted-foreground">min <span className="text-blue-400">{formatNumber(stepStats.min)}</span></span>
-                <span className="text-muted-foreground">avg <span className="text-amber-400">{formatNumber(stepStats.avg)}</span></span>
-                <span className="text-muted-foreground">max <span className="text-red-400">{formatNumber(stepStats.max)}</span></span>
-              </div>
-            )}
+            {/* Stats Panel & Time Marker */}
+            <div className="flex items-center justify-between md:justify-end gap-4 w-full">
+              {stepStats && (
+                <div className="flex items-center gap-3 text-[11px] font-mono bg-zinc-950/40 px-3 h-8 rounded-lg border border-zinc-800/40">
+                  <span className="text-muted-foreground">min <span className="text-blue-400 font-bold">{formatNumber(stepStats.min)}</span></span>
+                  <span className="text-muted-foreground">avg <span className="text-amber-400 font-bold">{formatNumber(stepStats.avg)}</span></span>
+                  <span className="text-muted-foreground">max <span className="text-red-400 font-bold">{formatNumber(stepStats.max)}</span></span>
+                </div>
+              )}
 
-            {timeLabel && (
-              <span className="text-[10px] font-mono text-accent">{timeLabel}</span>
-            )}
+              {timeLabel && (
+                <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-3 h-8 flex items-center rounded-lg border border-blue-500/20 shrink-0">
+                  {timeLabel}
+                </span>
+              )}
+            </div>
           </div>
 
+          {/* Unified Map Window Frame */}
           <div
-            className="rounded-xl overflow-hidden relative select-none"
-            style={{ background: 'hsl(215,22%,16%)', border: '1px solid hsl(215,18%,20%)', boxShadow: 'inset 0 1px 0 hsl(215,22%,22%)' }}
+            className="rounded-xl overflow-hidden relative border border-zinc-800/80 bg-zinc-950 shadow-2xl touch-none"
+            style={{ boxShadow: '0 20px 40px -15px rgba(0,0,0,0.5)' }}
           >
-            <div className="relative w-full" style={{ paddingBottom: '62.5%' }}>
+            {/* Locked Aspect Ratio Vector-to-Canvas Sandbox */}
+            <div className="relative w-full aspect-[960/600]">
+              {/* Layer 1: Color Canvas Array */}
               <canvas
                 ref={canvasRef}
-                className="absolute inset-0 w-full h-full"
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                 style={{ imageRendering: gridData && gridData.cols >= 20 ? 'auto' : 'pixelated' }}
               />
 
+              {/* Layer 2: Vector Maps & Controls (Stacked directly on top) */}
               <svg
                 ref={svgRef}
                 viewBox={US_VIEWBOX}
-                className="absolute inset-0 w-full h-full cursor-crosshair"
-                style={{ display: 'block' }}
+                className="absolute inset-0 w-full h-full cursor-crosshair select-none"
+                style={{ display: 'block', zIndex: 10 }}
                 onMouseMove={handleCanvasHover}
                 onMouseLeave={() => setHoveredCell(null)}
               >
@@ -412,8 +422,8 @@ export default function USHeatMap() {
                   const [x, y] = lonLatToXY(lon, lat);
                   return (
                     <text key={abbr} x={x} y={y} textAnchor="middle" dominantBaseline="middle"
-                      fontSize={9} fill="rgba(255,255,255,0.75)" fontFamily="monospace" fontWeight="700"
-                      style={{ pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+                      fontSize={9} fill="rgba(255,255,255,0.85)" fontFamily="monospace" fontWeight="700"
+                      style={{ pointerEvents: 'none', textShadow: '0 1.5px 3px rgba(0,0,0,0.95)' }}>
                       {abbr}
                     </text>
                   );
@@ -424,10 +434,10 @@ export default function USHeatMap() {
                   const isLarge = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Dallas', 'Miami', 'Seattle', 'San Francisco'].includes(name);
                   return (
                     <g key={name} style={{ pointerEvents: 'none' }}>
-                      <circle cx={x} cy={y} r={isLarge ? 3 : 2} fill="rgba(255,255,255,0.9)" stroke="rgba(0,0,0,0.5)" strokeWidth={0.8} />
-                      <text x={x} y={y - 5} textAnchor="middle" fontSize={isLarge ? 7 : 6}
-                        fill="rgba(255,255,255,0.85)" fontFamily="sans-serif"
-                        style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.7)', strokeWidth: 2, strokeLinejoin: 'round' }}>
+                      <circle cx={x} cy={y} r={isLarge ? 3 : 2} fill="rgba(255,255,255,0.95)" stroke="rgba(0,0,0,0.6)" strokeWidth={0.8} />
+                      <text x={x} y={y - 5} textAnchor="middle" fontSize={isLarge ? 7.5 : 6.5}
+                        fill="rgba(255,255,255,0.9)" fontFamily="sans-serif" fontWeight="500"
+                        style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.85)', strokeWidth: 2, strokeLinejoin: 'round' }}>
                         {name}
                       </text>
                     </g>
@@ -438,8 +448,8 @@ export default function USHeatMap() {
                   const [x] = lonLatToXY(lon, 37);
                   return (
                     <g key={lon}>
-                      <line x1={x} y1={18} x2={x} y2={582} stroke="rgba(255,255,255,0.06)" strokeWidth={0.5} />
-                      <text x={x} y={594} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.5)">{lon}°</text>
+                      <line x1={x} y1={18} x2={x} y2={582} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
+                      <text x={x} y={593} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)">{lon}°</text>
                     </g>
                   );
                 })}
@@ -447,50 +457,53 @@ export default function USHeatMap() {
                   const [, y] = lonLatToXY(-127, lat);
                   return (
                     <g key={lat}>
-                      <line x1={18} y1={y} x2={942} y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth={0.5} />
-                      <text x={12} y={y + 3} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.5)">{lat}°</text>
+                      <line x1={18} y1={y} x2={942} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
+                      <text x={12} y={y + 3} textAnchor="middle" fontSize={7.5} fill="rgba(180,210,240,0.4)">{lat}°</text>
                     </g>
                   );
                 })}
 
-                <text x={480} y={14} textAnchor="middle" fontSize={9} fill="rgba(160,200,240,0.7)" fontFamily="monospace">
+                <text x={480} y={15} textAnchor="middle" fontSize={9} fill="rgba(160,200,240,0.8)" fontFamily="monospace" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
                   {gridData.formula}  ·  {gridData.cols}×{gridData.rows} grid  ·  {gridData.config?.model}
                 </text>
               </svg>
 
-              <div className="absolute top-4 right-3 flex gap-1.5 items-start">
-                <div className="flex flex-col items-end gap-0.5">
+              {/* Layer 3: Overlay Scale Bar Legend */}
+              <div className="absolute top-4 right-4 flex gap-2 items-start z-20 bg-zinc-950/80 backdrop-blur-sm p-1.5 rounded-lg border border-zinc-800/50">
+                <div className="flex flex-col items-end gap-0.5 justify-between h-20">
                   {stepStats && <>
-                    <span className="text-[9px] font-mono text-white/60">{formatNumber(stepStats.max, 1)}</span>
-                    <span className="text-[9px] font-mono text-white/30" style={{ marginTop: 28 }}>{formatNumber(stepStats.avg, 1)}</span>
-                    <span className="text-[9px] font-mono text-white/60" style={{ marginTop: 28 }}>{formatNumber(stepStats.min, 1)}</span>
+                    <span className="text-[9px] font-mono font-bold text-white/80">{formatNumber(stepStats.max, 1)}</span>
+                    <span className="text-[9px] font-mono text-white/40">{formatNumber(stepStats.avg, 1)}</span>
+                    <span className="text-[9px] font-mono font-bold text-white/80">{formatNumber(stepStats.min, 1)}</span>
                   </>}
                 </div>
-                <div className="w-3 rounded-sm" style={{ height: 80, background: LEGEND_GRADIENTS[colorScheme] }} />
+                <div className="w-2.5 rounded-sm h-20" style={{ background: LEGEND_GRADIENTS[colorScheme] }} />
               </div>
 
+              {/* Layer 4: Floating Map Tooltip */}
               {hoveredCell && (
                 <div
-                  className="pointer-events-none absolute z-20 rounded-lg px-2.5 py-1.5 text-xs shadow-xl"
+                  className="pointer-events-none absolute z-30 rounded-lg px-2.5 py-1.5 text-xs shadow-2xl backdrop-blur"
                   style={{
-                    left: Math.min(hoveredCell.x - (svgRef.current?.getBoundingClientRect().left ?? 0) + 8, (svgRef.current?.clientWidth ?? 300) - 130),
-                    top: hoveredCell.y - (svgRef.current?.getBoundingClientRect().top ?? 0) - 48,
-                    background: 'hsl(220,18%,14%)',
-                    border: '1px solid hsl(215,22%,28%)',
+                    left: Math.min(hoveredCell.x - (svgRef.current?.getBoundingClientRect().left ?? 0) + 12, (svgRef.current?.clientWidth ?? 300) - 140),
+                    top: hoveredCell.y - (svgRef.current?.getBoundingClientRect().top ?? 0) - 52,
+                    background: 'rgba(24, 24, 27, 0.9)',
+                    border: '1px solid rgba(63, 63, 70, 0.7)',
                   }}
                 >
-                  <div className="font-mono text-[10px] text-muted-foreground">{hoveredCell.lat.toFixed(2)}°N {Math.abs(hoveredCell.lon).toFixed(2)}°W</div>
-                  <div className="font-mono font-bold text-accent">{formatNumber(hoveredCell.value)}</div>
+                  <div className="font-mono text-[9px] text-zinc-400">{hoveredCell.lat.toFixed(2)}°N {Math.abs(hoveredCell.lon).toFixed(2)}°W</div>
+                  <div className="font-mono font-bold text-blue-400 text-sm mt-0.5">{formatNumber(hoveredCell.value)}</div>
                 </div>
               )}
             </div>
           </div>
 
+          {/* Timeline Animation Deck */}
           {gridData.times && gridData.times.length > 1 && (
-            <div className="space-y-2 px-1">
+            <div className="space-y-2 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800/60">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Time Step</span>
-                <span className="text-[10px] font-mono text-primary">{timeLabel}</span>
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold">Time Step Position</span>
+                <span className="text-xs font-mono text-zinc-300 font-semibold">{timeLabel}</span>
               </div>
               <input 
                 type="range"
@@ -499,11 +512,11 @@ export default function USHeatMap() {
                 value={timeIdx}
                 step={1}
                 onChange={(e) => setTimeIdx(Number(e.target.value))}
-                className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500 transition-all hover:bg-zinc-700 focus:outline-none"
               />
-              <div className="flex justify-between text-[9px] font-mono text-muted-foreground/50">
+              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
                 <span>{gridData.times[0] ? new Date(gridData.times[0] * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Start'}</span>
-                <span>{gridData.times.length} steps</span>
+                <span className="bg-zinc-800/60 px-2 py-0.5 rounded border border-zinc-700/30">{gridData.times.length} frames</span>
                 <span>{gridData.times.at(-1) ? new Date(gridData.times.at(-1) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'End'}</span>
               </div>
             </div>
@@ -512,8 +525,8 @@ export default function USHeatMap() {
       )}
 
       {!gridData && !isFetching && (
-        <div className="flex flex-col items-center justify-center py-8 text-center space-y-2">
-          <p className="text-sm text-muted-foreground/60">Configure and fetch above to render a real-data heatmap</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center border-2 border-dashed border-zinc-800/60 rounded-2xl bg-zinc-900/10">
+          <p className="text-sm text-zinc-500 max-w-sm">Configure your parameters above and click Fetch to parse data matrices directly onto the canvas grid mapping engine.</p>
         </div>
       )}
     </div>
