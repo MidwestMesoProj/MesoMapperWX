@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { Play, Map, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
-import { Slider } from '@/components/ui/slider';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // CONUS grid presets — from coarse preview up to model-dependent maximum
 const GRID_PRESETS = [
@@ -235,7 +233,6 @@ export default function MapModeForm({ onFetch, isFetching, fetchProgress, useBul
         </div>
       )}
 
-      {/* Progress bar */}
       {isFetching && fetchProgress && (
         <div className="space-y-1">
           <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
